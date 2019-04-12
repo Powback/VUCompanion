@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Text;
 using System.Text.RegularExpressions;
 using Shaman.Runtime;
@@ -22,7 +23,7 @@ namespace VUCompanion
 
 
 		private static string fileName = @"C:\Program Files (x86)\VeniceUnleashed";
-		private static string arguments = "-server -dedicated -vudebug -high120 -highResTerrain -tracedc -headless -updatebranch dev";
+		private static string arguments = @"-vudebug -tracedc -updatebranch dev";
 		private static string logFile = @"c:/temp/out.txt";
 
 		private static string pTime = @"^\[\d+:\d+:\d+\]";
@@ -33,6 +34,11 @@ namespace VUCompanion
 
 		private static string patternGuid = @"[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}";
 		private static string patternPath = @"(\w+/)+\w+";
+		private static string patternNumber = @"\d+(\.\d+)?";
+
+		private static string lastMessage = "dummy";
+		private static int lastMessageCount = 0;
+
 
 		private static Dictionary<string, Color> modColors = new Dictionary<string, Color>();
 
@@ -43,9 +49,8 @@ namespace VUCompanion
 			InitStyleSheet();
 			Console.WriteLine("Starting Server", Color.White);
 			WebUICompiler.Start();
-			StartProcess();
+			StartServer();
 			Console.Title = title;
-			Console.WriteLine("Done");
 		}
 
 		static void InitStyleSheet()
@@ -64,6 +69,35 @@ namespace VUCompanion
 
 		}
 		static void StartProcess()
+		{
+			string args = arguments;
+			Process process = new Process
+			{
+				StartInfo = new ProcessStartInfo
+				{
+					FileName = "cmd",
+					Arguments = @"/c START /B /WAIT """" """ + fileName + @"\vu.exe" + @""" " + args,
+					UseShellExecute = false,
+					RedirectStandardOutput = true,
+					RedirectStandardError = true,
+					CreateNoWindow = false
+				},
+			};
+			process.Start();
+
+
+
+		}
+
+		static void ClientOutputHandler(object sendingProcess, DataReceivedEventArgs outLine)
+		{
+			//* Do your stuff with the output (write to console/log/StringBuilder)
+			Console.WriteLine(outLine.Data);
+			if (!string.IsNullOrEmpty(outLine.Data))
+				Console.WriteLine(outLine.Data);
+		}
+
+		static void StartServer()
 		{
 
 			try
@@ -108,18 +142,28 @@ namespace VUCompanion
 
 
 			string messageRaw = input.Replace(messageInfo.Groups[0].ToString(), "");
-
+			if (messageRaw.Contains(lastMessage))
+			{
+				Console.SetCursorPosition(0, Console.CursorTop - 1);
+				lastMessageCount++;
+			}
+			else
+			{
+				lastMessage = messageRaw;
+				lastMessageCount = 0;
+			}
+			
 			Console.WriteStyled("[" + time + "]", styleSheet);
 
 			if (!messageRaw.Contains("[VeniceEXT]"))
 			{
 				if (type == "error")
 				{
-					Console.WriteLine("[" + type + "] " + messageRaw, Color.FromArgb(200,25,25));
+					Console.Write("[" + type + "] " + messageRaw, Color.FromArgb(200,25,25));
 				}
 				else
 				{
-					Console.WriteLine("[" + type + "] " + messageRaw, Color.FromArgb(50, 50, 50));
+					Console.Write("[" + type + "] " + messageRaw, Color.FromArgb(50, 50, 50));
 				}
 			}
 			else
@@ -129,7 +173,7 @@ namespace VUCompanion
 				var modName = Regex.Match(message, @"^\[(\w+)\] ").Groups[1].ToString();
 				if (modName == "")
 				{
-					Console.WriteLineStyled("[" + type + "] " + message, styleSheet);
+					Console.WriteStyled("[" + type + "] " + message, styleSheet);
 				}
 				else
 				{
@@ -140,21 +184,22 @@ namespace VUCompanion
 					Console.Write("] ", Color.AliceBlue);
 
 					message = message.Replace("[" + modName + "] ", "");
+
 					var moduleName = Regex.Match(message, @"^\[(\w+)\] ").Groups[1].ToString();
 					if (moduleName == "")
 					{
 						if (message.Contains("Compiling"))
 						{
-							Console.WriteLine(message, Color.FromArgb(50, 50, 50));
+							Console.Write(message, Color.FromArgb(50, 50, 50));
 						}
 						else if (message.Contains("Error: "))
 						{
-							Console.WriteLine(message, Color.Red);
+							Console.Write(message, Color.Red);
 
 						}
 						else 
 						{
-							Console.WriteLineStyled(message, styleSheet);
+							Console.WriteStyled(message, styleSheet);
 						}
 					}
 					else
@@ -163,16 +208,18 @@ namespace VUCompanion
 						Console.Write("[", Color.AliceBlue);
 						Console.Write(moduleName, FindModColor(moduleName));
 						Console.Write("] ", Color.AliceBlue);
-						Console.WriteLineStyled(message, styleSheet);
+
+
+						Console.WriteStyled(message, styleSheet);
 					}
-
-
 				}
-
 			}
 
-
-
+			if (lastMessageCount > 0)
+			{
+				Console.Write("(" + lastMessageCount + ")");
+			}
+			Console.WriteLine();
 		}
 
 		static void FindMeta(string input)
