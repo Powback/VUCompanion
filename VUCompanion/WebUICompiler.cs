@@ -6,23 +6,28 @@ using System.Linq;
 
 namespace VUCompanion
 {
-	class WebUICompiler
+	public class WebUICompiler
 	{
-		static string modPrefix = "Mods/";
-		static string currentPath = "";
+		private const string ModsFolderName = "Mods";
+		private const string VuiccExeName = "vuicc.exe";
+		private const string WwwFolderName = "/www";
+		private const string WebUIFolderName = "/WebUI";
+		private const string ContainerFileName = "ui.vuic";
+
+		private static string _workingDirectory = "";
 
 		public static void Start()
 		{
-			currentPath = System.IO.Path.GetDirectoryName(
-				System.Reflection.Assembly.GetExecutingAssembly().Location) + "\\";
+			_workingDirectory = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location) + "\\";
 
-			if (!File.Exists(currentPath + "vuicc.exe"))
+			if (!File.Exists(_workingDirectory + VuiccExeName))
 			{
-				Console.WriteLine("Missing vuicc.exe", Color.Red);
+				Console.WriteLine("Missing " + VuiccExeName, Color.Red);
 				return;
 			}
+
 			string line;
-			StreamReader file = new StreamReader(currentPath + @"modlist.txt");
+			StreamReader file = new StreamReader(_workingDirectory + @"modlist.txt");
 
 			while ((line = file.ReadLine()) != null)
 			{
@@ -33,72 +38,80 @@ namespace VUCompanion
 			Console.WriteLine("Done compiling", Color.White);
 		}
 
-		static void Compile(string modName)
+		private static void Compile(string modName)
 		{
+			string webUIFolderName = string.Empty;
 
-
-			bool modExists = true;
-			string webUIPath = "";
-			if (Directory.Exists(currentPath + modPrefix + modName + "/www"))
+			if (Directory.Exists(Path.Combine(_workingDirectory, ModsFolderName, modName, WwwFolderName))) // www
 			{
-				webUIPath = "/www";
+				webUIFolderName = WwwFolderName;
 			}
-			else if (Directory.Exists(currentPath + modPrefix + modName + "/WebUI"))
+			else if (Directory.Exists(_workingDirectory + ModsFolderName + modName + WebUIFolderName)) // WebUI
 			{
-				webUIPath = "/WebUI";
+				webUIFolderName = WebUIFolderName;
 			}
 			else
-			{
-				modExists = false;
-			}
-
-			if (!modExists)
 			{
 				return;
 			}
 
 			Console.Write("Compiling WebUI for " + modName + "... ", Color.White);
-			// Start the child process.
-			Process p = new Process();
-			// Redirect the output stream of the child process.
-			p.StartInfo.UseShellExecute = false;
-			p.StartInfo.RedirectStandardOutput = true;
-			p.StartInfo.WorkingDirectory = currentPath;
-			p.StartInfo.FileName = "vuicc.exe";
-			p.StartInfo.Arguments = modPrefix + modName + webUIPath + " " + modPrefix + modName + "/ui.vuic";
+			string webUIFolderPath = Path.Combine(ModsFolderName,
+			                                      modName,
+			                                      webUIFolderName);
 
-			p.Start();
+			string compiledContainerOutputPath = Path.Combine(ModsFolderName,
+			                                                  modName,
+			                                                  ContainerFileName);
+			// Start the child process.
+			Process childProcess = new Process
+			            {
+				            StartInfo =
+				            {
+					            UseShellExecute = false,
+					            RedirectStandardOutput = true,
+					            WorkingDirectory = _workingDirectory,
+					            FileName = VuiccExeName,
+					            Arguments = webUIFolderPath + " " + compiledContainerOutputPath,
+					            //Arguments = ModsFolderName + modName + webUIPath + " " + ModsFolderName + modName + "/ui.vuic"
+										}
+			            };
+
+			// Redirect the output stream of the child process.
+			childProcess.Start();
+
 			// Do not wait for the child process to exit before
 			// reading to the end of its redirected stream.
 			// p.WaitForExit();
 			// Read the output stream first and then wait.
-			string output = p.StandardOutput.ReadToEnd();
-			p.WaitForExit();
+			string output = childProcess.StandardOutput.ReadToEnd();
+			childProcess.WaitForExit();
 
-			if (p.ExitCode == 0)
+			if (childProcess.ExitCode == 0)
 			{
 				Console.WriteLine("Success", Color.Green);
 			}
 			else
 			{
-				string[] result = output.Split(
-					new[] { Environment.NewLine },
-					StringSplitOptions.None
-				);
+				string[] result = output.Split(new[] { Environment.NewLine }, StringSplitOptions.None);
+
 				Console.WriteLine(result[result.Length - 2], Color.Red);
 			}
 		}
 
-		public static string DString(string input)
-		{
-			string ret = "none";
-			if (input != "")
-			{
-				ret = input;
-			}
-			return ret;
-		}
+		//private static string DString(string input)
+		//{
+		//	string ret = "none";
+		//	if (input != "")
+		//	{
+		//		ret = input;
+		//	}
+		//	return ret;
+		//}
 
-		public static bool HasNumber(string input) => input.Where(x => Char.IsDigit(x)).Any();
+		//private static bool HasNumber(string input)
+		//{
+		//	return input.Any(Char.IsDigit);
+		//}
 	}
 }
