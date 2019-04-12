@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using Shaman.Runtime;
 using System.Drawing;
+using System.IO;
 using System.Security.Cryptography;
 using Colorful;
 using Console = Colorful.Console;
@@ -16,32 +17,27 @@ namespace VUCompanion
 	{
 		private static StyleSheet styleSheet = new StyleSheet(Color.White);
 
-		private static string title = "VUCompanion";
-		private static string titleSuffix1 = "";
-		private static string titleSuffix2 = "";
-		private static bool metaGathered = false;
+		private const string Title = "VUCompanion";
+		private const string VenicePath = @"C:\Program Files (x86)\VeniceUnleashed";
+		private const string Arguments = "-server -dedicated -vudebug -high120 -highResTerrain -tracedc -headless";
+		//private const string LogFilePath = @"c:/temp/out.txt";
 
+		private const string TimeStampRegex = @"^\[\d+:\d+:\d+\]";
+		private const string InfoRegex = @"^\[info\]";
+		private const string ErrorRegex = @"^\[error\].+";
+		private const string SuccessRegex = @".+[Ss]uccess\w+.+";
+		//private const string CompilingRegex = @"Compiling .+\.\.\."; // not needed?
 
-		private static string fileName = @"C:\Program Files (x86)\VeniceUnleashed";
-		private static string arguments = @"-vudebug -tracedc -updatebranch dev";
-		private static string logFile = @"c:/temp/out.txt";
+		private const string GuidRegex = @"[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}";
+		private const string PathRegex = @"(\w+/)+\w+";
 
-		private static string pTime = @"^\[\d+:\d+:\d+\]";
-		private static string pInfo = @"^\[info\]";
-		private static string pError = @"^\[error\].+";
-		private static string pSuccess = @".+[Ss]uccess\w+.+";
-		private static string pCompiling = @"Compiling .+\.\.\.";
+		private static readonly Dictionary<string, Color> ModColors = new Dictionary<string, Color>();
 
-		private static string patternGuid = @"[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}";
-		private static string patternPath = @"(\w+/)+\w+";
-		private static string patternNumber = @"\d+(\.\d+)?";
-
-		private static string lastMessage = "dummy";
-		private static int lastMessageCount = 0;
-
-
-		private static Dictionary<string, Color> modColors = new Dictionary<string, Color>();
-
+		private static string _titleSuffix1 = string.Empty;
+		private static string _titleSuffix2 = string.Empty;
+		private static bool _metaGathered;
+		private static string lastMessage = "DummyMessage";
+		private static int lastMessageCount = 1;
 
 		static void Main(string[] args)
 		{
@@ -50,71 +46,38 @@ namespace VUCompanion
 			Console.WriteLine("Starting Server", Color.White);
 			WebUICompiler.Start();
 			StartServer();
-			Console.Title = title;
+			Console.Title = Title;
+			Console.WriteLine("Done");
 		}
 
-		static void InitStyleSheet()
+		private static void InitStyleSheet()
 		{
+			styleSheet.AddStyle(PathRegex, Color.FromArgb(246, 185, 59));
+			styleSheet.AddStyle(GuidRegex, Color.MediumSlateBlue);
 
-			styleSheet.AddStyle(patternPath, Color.FromArgb(246, 185, 59));
-			styleSheet.AddStyle(patternGuid, Color.MediumSlateBlue);
-
-
-			styleSheet.AddStyle(pTime, Color.FromArgb(25,25,25));
-			styleSheet.AddStyle(pInfo, Color.FromArgb(50, 50, 50));
-			styleSheet.AddStyle(pError, Color.FromArgb(200, 25, 25));
-			styleSheet.AddStyle(pSuccess, Color.FromArgb(25, 200, 25));
-
-
-
+			styleSheet.AddStyle(TimeStampRegex, Color.FromArgb(25,25,25));
+			styleSheet.AddStyle(InfoRegex, Color.FromArgb(50, 50, 50));
+			styleSheet.AddStyle(ErrorRegex, Color.FromArgb(200, 25, 25));
+			styleSheet.AddStyle(SuccessRegex, Color.FromArgb(25, 200, 25));
 		}
-		static void StartProcess()
+		private static void StartServer()
 		{
-			string args = arguments;
-			Process process = new Process
-			{
-				StartInfo = new ProcessStartInfo
-				{
-					FileName = "cmd",
-					Arguments = @"/c START /B /WAIT """" """ + fileName + @"\vu.exe" + @""" " + args,
-					UseShellExecute = false,
-					RedirectStandardOutput = true,
-					RedirectStandardError = true,
-					CreateNoWindow = false
-				},
-			};
-			process.Start();
-
-
-
-		}
-
-		static void ClientOutputHandler(object sendingProcess, DataReceivedEventArgs outLine)
-		{
-			//* Do your stuff with the output (write to console/log/StringBuilder)
-			Console.WriteLine(outLine.Data);
-			if (!string.IsNullOrEmpty(outLine.Data))
-				Console.WriteLine(outLine.Data);
-		}
-
-		static void StartServer()
-		{
-
 			try
 			{
-				using (var a = ProcessUtils.RunFromRaw(fileName, fileName + @"\vu.com", arguments))
+				using (StreamReader streamReader = ProcessUtils.RunFromRaw(VenicePath, VenicePath + @"\vu.com", Arguments))
 				{
-					while (!a.EndOfStream)
+					while (!streamReader.EndOfStream)
 					{
-						string output = a.ReadLine();
-						if (output != "")
+						string output = streamReader.ReadLine();
+
+						if (output != string.Empty)
 						{
-							if (!metaGathered)
+								if (!_metaGathered)
 							{
 								FindMeta(output);
 							}
-							FormatAndClean(output);
 
+							FormatAndClean(output);
 						}
 					}
 				}
@@ -123,14 +86,12 @@ namespace VUCompanion
 			{
 				Console.WriteLine(e.Message, Color.Red);
 			}
-			
 		}
 
-		static void FormatAndClean(string input)
+		private static void FormatAndClean(string input)
 		{
-			
+			Match messageInfo = Regex.Match(input, @"^\[(\d+-\d+-\d+ (\d+:\d+:\d+).\d+:\d+)\] \[(\w+)\] ");
 
-			var messageInfo = Regex.Match(input, @"^\[(\d+-\d+-\d+ (\d+:\d+:\d+).\d+:\d+)\] \[(\w+)\] ");
 			if (messageInfo.Groups.Count < 3)
 			{
 				Console.WriteLine(input, Color.White);
@@ -140,8 +101,7 @@ namespace VUCompanion
 			string time = messageInfo.Groups[2].ToString();
 			string type = messageInfo.Groups[3].ToString();
 
-
-			string messageRaw = input.Replace(messageInfo.Groups[0].ToString(), "");
+			string messageRaw = input.Replace(messageInfo.Groups[0].ToString(), string.Empty);
 			if (messageRaw.Contains(lastMessage))
 			{
 				Console.SetCursorPosition(0, Console.CursorTop - 1);
@@ -150,7 +110,7 @@ namespace VUCompanion
 			else
 			{
 				lastMessage = messageRaw;
-				lastMessageCount = 0;
+				lastMessageCount = 1;
 			}
 			
 			Console.WriteStyled("[" + time + "]", styleSheet);
@@ -168,25 +128,24 @@ namespace VUCompanion
 			}
 			else
 			{
+				string message = messageRaw.Replace("[VeniceEXT] ", string.Empty);
+				string modName = Regex.Match(message, @"^\[(\w+)\] ").Groups[1].ToString();
 
-				var message = messageRaw.Replace("[VeniceEXT] ", "");
-				var modName = Regex.Match(message, @"^\[(\w+)\] ").Groups[1].ToString();
-				if (modName == "")
+				if (modName == string.Empty)
 				{
 					Console.WriteStyled("[" + type + "] " + message, styleSheet);
 				}
 				else
 				{
-					
 					Console.WriteStyled("[" + type + "]", styleSheet);
 					Console.Write("[", Color.AliceBlue);
 					Console.Write(modName, FindModColor(modName));
 					Console.Write("] ", Color.AliceBlue);
 
 					message = message.Replace("[" + modName + "] ", "");
+					string moduleName = Regex.Match(message, @"^\[(\w+)\] ").Groups[1].ToString();
 
-					var moduleName = Regex.Match(message, @"^\[(\w+)\] ").Groups[1].ToString();
-					if (moduleName == "")
+					if (moduleName == string.Empty)
 					{
 						if (message.Contains("Compiling"))
 						{
@@ -195,7 +154,6 @@ namespace VUCompanion
 						else if (message.Contains("Error: "))
 						{
 							Console.Write(message, Color.Red);
-
 						}
 						else 
 						{
@@ -208,49 +166,50 @@ namespace VUCompanion
 						Console.Write("[", Color.AliceBlue);
 						Console.Write(moduleName, FindModColor(moduleName));
 						Console.Write("] ", Color.AliceBlue);
-
-
 						Console.WriteStyled(message, styleSheet);
 					}
 				}
 			}
 
-			if (lastMessageCount > 0)
+			if (lastMessageCount > 1)
 			{
 				Console.Write("(" + lastMessageCount + ")");
 			}
 			Console.WriteLine();
 		}
 
-		static void FindMeta(string input)
+		private static void FindMeta(string input)
 		{
 			if (input.Contains("Initializing Venice Unleashed Server"))
 			{
-				titleSuffix1 = Regex.Match(input, @"Initializing Venice Unleashed Server (\(.+\))").Groups[1].ToString();
-				Console.Title =  title + " " + titleSuffix1;
-			};
+				_titleSuffix1 = Regex.Match(input, @"Initializing Venice Unleashed Server (\(.+\))").Groups[1].ToString();
+				Console.Title =  Title + " " + _titleSuffix1;
+			}
 
 			if (input.Contains("Successfully authenticated server with Zeus"))
 			{
-				titleSuffix2 = Regex.Match(input, @"Successfully authenticated server with Zeus (\(.+\))").Groups[1].ToString();
-			};
+				_titleSuffix2 = Regex.Match(input, @"Successfully authenticated server with Zeus (\(.+\))").Groups[1].ToString();
+			}
+
 			if (input.Contains("Game successfully registered with Zeus."))
 			{
-				Console.Title = title + " " + titleSuffix1 + " " + titleSuffix2;
-			};
-
+				Console.Title = Title + " " + _titleSuffix1 + " " + _titleSuffix2;
+				_metaGathered = true;
+			}
 		}
-		static Color FindModColor(string modName)
+
+		private static Color FindModColor(string modName)
 		{
-			
-			if (modColors.ContainsKey(modName))
+			if (ModColors.ContainsKey(modName))
 			{
-				return modColors[modName];
-			} else { 
-				var md5 = MD5.Create();
-				var hash = md5.ComputeHash(Encoding.UTF8.GetBytes(modName));
-				var color = Color.FromArgb(hash[0], hash[1], hash[2]);
-				modColors.Add(modName, color);
+				return ModColors[modName];
+			}
+			else
+			{ 
+				MD5 md5 = MD5.Create();
+				byte[] hash = md5.ComputeHash(Encoding.UTF8.GetBytes(modName));
+				Color color = Color.FromArgb(hash[0], hash[1], hash[2]);
+				ModColors.Add(modName, color);
 				return color;
 			}
 		}
